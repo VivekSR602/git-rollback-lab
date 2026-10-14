@@ -1,0 +1,236 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: [
+                'users',
+                'products',
+                'orders',
+                'payments',
+                'api-gateway',
+                'ALL'
+            ],
+            description: 'Select a microservice to build'
+        )
+
+        booleanParam(
+            name: 'PUSH_IMAGES',
+            defaultValue: true,
+            description: 'Push Docker images to JFrog'
+        )
+    }
+
+    environment {
+        GIT_REPO = 'https://github.com/Siddeshg672/cicd-microservices.git'
+        GIT_BRANCH = 'main'
+
+        // Replace with your JFrog registry hostname
+        JFROG_REGISTRY = 'mycompany.jfrog.io'
+
+        JFROG_REPO = 'docker-local'
+
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                git branch: "${GIT_BRANCH}",
+                    url: "${GIT_REPO}"
+
+                sh '''
+                    echo "Repository checked out"
+                    pwd
+                    ls -la
+                    ls -la services
+                '''
+            }
+        }
+
+        stage('Validate Selection') {
+            steps {
+                script {
+                    def allServices = [
+                        'users',
+                        'products',
+                        'orders',
+                        'payments',
+                        'api-gateway'
+                    ]
+
+                    def selectedServices =
+                        params.SERVICE == 'ALL'
+                        ? allServices
+                        : [params.SERVICE]
+
+                    env.SERVICES_TO_BUILD =
+                        selectedServices.join(' ')
+
+                    echo "Selected: ${env.SERVICES_TO_BUILD}"
+
+                    selectedServices.each { service ->
+
+                        def context = "services/${service}"
+
+                        if (!fileExists(context)) {
+                            error "Missing directory: ${context}"
+                        }
+
+                        if (!fileExists("${context}/Dockerfile")) {
+                            error "Missing Dockerfile: ${context}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Check Docker') {
+            steps {
+                sh '''
+                    docker --version
+                    docker info > /dev/null
+                    echo "Docker is ready"
+                '''
+            }
+        }
+
+        stage('Build Docker Images') {
+            steps {
+                script {
+                    def services =
+                        env.SERVICES_TO_BUILD.tokenize(' ')
+
+                    services.each { service ->
+
+                        def image =
+                            "${env.JFROG_REGISTRY}/" +
+                            "${env.JFROG_REPO}/" +
+                            "${service}:${env.IMAGE_TAG}"
+
+                        echo "Building ${image}"
+
+                        sh """
+                            docker build \\
+                              -t '${image}' \\
+                              'services/${service}'
+                        """
+
+                        echo "Built ${image}"
+                    }
+                }
+            }
+        }
+
+        stage('Push Images to JFrog') {
+            when {
+                expression {
+                    return params.PUSH_IMAGES
+                }
+            }
+
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'jfrog-docker-creds',
+                        usernameVariable: 'JFROG_USER',
+                        passwordVariable: 'JFROG_TOKEN'
+                    )
+                ]) {
+
+                    script {
+                        def services =
+                            env.SERVICES_TO_BUILD.tokenize(' ')
+
+                        withEnv([
+                            "DOCKER_CONFIG=${pwd(tmp: true)}/docker-config"
+                        ]) {
+                            try {
+                                sh '''
+                                    set +x
+                                    mkdir -p "$DOCKER_CONFIG"
+
+                                    printf '%s' "$JFROG_TOKEN" |
+                                      docker login "$JFROG_REGISTRY" \
+                                        --username "$JFROG_USER" \
+                                        --password-stdin
+                                '''
+
+                                services.each { service ->
+
+                                    def image =
+                                        "${env.JFROG_REGISTRY}/" +
+                                        "${env.JFROG_REPO}/" +
+                                        "${service}:${env.IMAGE_TAG}"
+
+                                    echo "Pushing ${image}"
+
+                                    sh "docker push '${image}'"
+
+                                    echo "Pushed ${image}"
+                                }
+
+                            } finally {
+                                sh '''
+                                    docker logout "$JFROG_REGISTRY" \
+                                      >/dev/null 2>&1 || true
+
+                                    rm -rf "$DOCKER_CONFIG"
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build Summary') {
+            steps {
+                script {
+                    def services =
+                        env.SERVICES_TO_BUILD.tokenize(' ')
+
+                    echo "=========================="
+                    echo "JENKINS BUILD SUMMARY"
+                    echo "=========================="
+
+                    echo "Build Number: ${env.BUILD_NUMBER}"
+                    echo "Selected: ${params.SERVICE}"
+                    echo "Push Enabled: ${params.PUSH_IMAGES}"
+
+                    services.each { service ->
+
+                        echo "${env.JFROG_REGISTRY}/" +
+                             "${env.JFROG_REPO}/" +
+                             "${service}:${env.IMAGE_TAG}"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'CI PIPELINE SUCCESSFUL'
+        }
+
+        failure {
+            echo 'CI PIPELINE FAILED - CHECK CONSOLE LOG'
+        }
+
+        always {
+            cleanWs(
+                deleteDirs: true,
+                disableDeferredWipeout: true
+            )
+        }
+    }
+}
