@@ -1,0 +1,55 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: ['api-gateway', 'users', 'products', 'orders', 'payments'],
+            description: 'Microservice (folder under services/) to scan, build and push'
+        )
+    }
+
+    stages {
+        stage('checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Siddeshg672/cicd-microservices.git'
+            }
+        }
+
+        stage('code scan') {
+            steps {
+                script {
+                    // 'SonarScanner' must match the tool name in Manage Jenkins > Tools
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        dir("services/${params.SERVICE}") {
+                            sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=Sonar_Jfrog_Assignment_${params.SERVICE} -Dsonar.projectName=Sonar_Jfrog_Assignment_${params.SERVICE} -Dsonar.sources=. -Dsonar.exclusions=node_modules/**"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('create docker image') {
+            steps {
+                sh "docker build -t ${params.SERVICE}:v1.0.${BUILD_NUMBER} services/${params.SERVICE}"
+            }
+        }
+
+        stage('push docker image to Jfrog') {
+            steps {
+                sh "docker tag ${params.SERVICE}:v1.0.${BUILD_NUMBER} hiqodeinnovations.jfrog.io/yashwanthgowdam/${params.SERVICE}:v1.0.${BUILD_NUMBER}"
+                withCredentials([usernamePassword(credentialsId: 'Assignment_Jfrog_Login', passwordVariable: 'pass', usernameVariable: 'user')]) {
+                    sh 'echo "$pass" | docker login -u "$user" --password-stdin hiqodeinnovations.jfrog.io'
+                    sh "docker push hiqodeinnovations.jfrog.io/yashwanthgowdam/${params.SERVICE}:v1.0.${BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "docker rmi -f hiqodeinnovations.jfrog.io/yashwanthgowdam/${params.SERVICE}:v1.0.${BUILD_NUMBER} ${params.SERVICE}:v1.0.${BUILD_NUMBER} || true"
+        }
+    }
+}
