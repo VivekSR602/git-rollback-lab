@@ -1,0 +1,761 @@
+Jenkins Installtion
+
+sudo apt update
+
+sudo apt install default-jre
+
+java -version
+
+sudo mkdir -p /etc/apt/keyrings
+
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc]" https://pkg.jenkins.io/debian-stable binary/ | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+sudo apt update
+
+sudo apt install jenkins
+
+sudo systemctl start jenkins.service
+
+sudo systemctl status jenkins
+
+https://www.jenkins.io/doc/book/pipeline/syntax/
+
+Pipeline types
+
+Declarative 
+Scripted 
+
+
+Agent
+	any 
+	none
+	label 
+	docker
+	kubernetes 
+-------------------------------------------------------------
+pipeline {
+    agent any
+
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+            }
+        }
+        stage('test'){
+            steps {
+                echo 'hello'
+            }
+        }
+    }
+}
+
+-------------------------------------------------------------
+pipeline {
+    agent none
+
+    stages {
+        stage('Hello') {
+            agent { label 'agent' }
+            steps {
+                echo 'Hello World'
+            }
+        }
+        stage('test'){
+            agent { label 'agent_1' }
+            steps {
+                echo 'hello'
+            }
+        }
+    }
+}
+
+
+-------------------------------------------------------------
+pipeline {
+    agent {
+        label 'agent_1'
+    }
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                sh 'touch a'
+            }
+        }
+        stage('test'){
+            steps {
+                echo 'hello'
+                sh 'touch b'
+            }
+        }
+    }
+}
+-------------------------------------------------------------
+pipeline {
+    agent {
+        docker {
+            image 'maven:3.9.3-eclipse-temurin-17'
+        }
+    }
+
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                sh 'touch a'
+            }
+        }
+        stage('test'){
+            steps {
+                echo 'hello'
+                sh 'touch b'
+            }
+        }
+    }
+}
+-------------------------------------------------------------
+kubernetes
+Execute the Pipeline, or stage, inside a pod deployed on a Kubernetes cluster. In order to use this option, the Jenkinsfile must be loaded from either a Multibranch Pipeline or a Pipeline from SCM. The Pod template is defined inside the kubernetes { } block. For example, if you want a pod with a Kaniko container inside it, you would define it as follows:
+
+agent {
+    kubernetes {
+        defaultContainer 'kaniko'
+        yaml '''
+kind: Pod
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:debug
+    imagePullPolicy: Always
+    command:
+    - sleep
+    args:
+    - 99d
+    volumeMounts:
+      - name: aws-secret
+        mountPath: /root/.aws/
+      - name: docker-registry-config
+        mountPath: /kaniko/.docker
+  volumes:
+    - name: aws-secret
+      secret:
+        secretName: aws-secret
+    - name: docker-registry-config
+      configMap:
+        name: docker-registry-config
+'''
+   }
+-------------------------------------------------------------
+
+
+
+
+Variables 
+Pre-defined
+User-defined 
+
+
+pipeline {
+    agent any
+    environment {
+        tool_name = 'docker'
+    }
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                print BUILD_NUMBER
+                sh 'echo ${BUILD_NUMBER}'
+                sh 'echo ${tool_name}'
+            }
+        }
+    }
+}
+-------------------------------------------------------------
+
+Parameters
+
+pipeline {
+    agent any
+    environment {
+        tool_name = 'docker'
+    }
+    parameters{ 
+        string ( name: 'DEPLOY_ENV', defaultValue: 'staging', description: '' ) 
+        booleanParam(name: 'DEBUG_BUILD', defaultValue: true, description: '')
+        choice(name: 'CHOICES', choices: ['one', 'two', 'three'], description: '')
+        string ( name: 'ENV' )
+    }
+    stages {
+        stage('Hello') {
+            when { expression { DEBUG_BUILD == 'true' } }
+            steps {
+                sh 'echo ${BUILD_NUMBER}'
+                sh 'echo ${tool_name}'
+                sh "echo ${user}"
+                print DEPLOY_ENV
+                print DEBUG_BUILD
+            }
+        }
+        stage('test'){
+            when { expression { DEBUG_BUILD == 'false' } }
+            steps{
+                sh 'echo ${BUILD_NUMBER}'
+            }
+        }
+    }
+}
+----------------------------------------------------------------------
+
+Options
+
+pipeline {
+    agent any
+    options {
+        retry (3)
+        buildDiscarder(logRotator(numToKeepStr: '30')) 
+        disableConcurrentBuilds()
+        timeout(time: 10, unit: 'SECONDS')
+        timestamps()
+    }
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                sleep 20
+            }
+        }
+    }
+}
+
+------------------------------------------------------------------------
+
+Trigger Jobs
+
+pipeline {
+    agent any
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                build ('sample_pipeline')
+            }
+        }
+    }
+}
+
+----------------------------------------------------------------------
+
+Triggers
+
+pipeline {
+    agent any
+    triggers{
+        cron ('* * * * *')
+        pollSCM ('* * * * *')
+        upstream(upstreamProjects: 'sample_pipeline', threshold: hudson.model.Result.SUCCESS)
+    }
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                // build ('sample_pipeline')
+            }
+        }
+    }
+}
+----------------------------------------------------------------------
+Parallel execution
+
+pipeline {
+    agent any
+    stages {
+        stage('parallel stage'){
+            parallel{
+                stage('sonar_test'){
+                    steps{
+                        echo 'sonar execution1'
+                        sleep 5
+                        echo 'sonar execution2'
+                        sleep 5
+                        echo 'sonar execution3'
+                        sleep 5
+                        echo 'sonar execution4'
+                        sleep 5
+                    }
+                }
+                stage('python_test'){
+                    steps{
+                        echo 'python execution1'
+                        sleep 10
+                        echo 'python execution2'
+                        sleep 10
+                        echo 'python execution3'
+                        sleep 10
+                        echo 'python execution4'
+                        sleep 10
+                    }
+                }
+            }
+        }
+        stage('Hello') {
+            steps {
+                echo 'Hello World'
+                // build ('sample_pipeline')
+            }
+        }
+    }
+}
+
+_______________________________________________________________________________________
+
+Try catch
+
+pipeline {
+    agent any
+    stages {
+        stage('test'){
+            steps{
+                script {
+                sh 'echo ${BUILD_NUMBER}'
+                try{
+                    sh 'mkdir test'
+                } catch (Exception err){
+                    echo 'folder already created'
+                }
+                }
+            }
+        }
+    }
+}
+_______________________________________________________________________________________
+
+Tools
+
+pipeline {
+    agent any
+    tools {
+        maven 'maven_3.8.5'
+        git 'git_new'
+    }
+    stages {
+        stage('test'){
+            steps{
+                sh 'echo ${BUILD_NUMBER}'
+                sh 'mvn --version'
+                sh 'git --version'
+            }
+        }
+    }
+}
+
+-----------------------------------------------------------------------------------------
+
+Conditions
+
+pipeline {
+    agent any
+    stages {
+        stage('test'){
+            when { 
+                allOf{
+                    expression { branch == 'test' } 
+                    expression { environment == 'test' }
+                } 
+            }
+            tools { maven 'maven_3.8.5' }
+            steps{
+                sh 'mvn --version'
+            }
+        }
+        stage('uat'){
+            when { 
+                allOf{
+                    expression { branch == 'uat' } 
+                    expression { environment == 'uat' }
+                }
+            }
+            tools { maven 'maven_3.10.0' }
+            steps{
+                sh 'mvn --version'
+            }
+        }
+    }
+}
+
+
+pipeline {
+    agent any
+    stages {
+        stage('test'){
+            when { 
+                anyOf{
+                    expression { branch == 'test' } 
+                    expression { environment == 'test' }
+                } 
+            }
+            tools { maven 'maven_3.8.5' }
+            steps{
+                sh 'mvn --version'
+            }
+        }
+        stage('uat'){
+            when { 
+                anyOf{
+                    expression { branch == 'uat' } 
+                    expression { environment == 'uat' }
+                }
+            }
+            tools { maven 'maven_3.10.0' }
+            steps{
+                sh 'mvn --version'
+            }
+        }
+    }
+}
+-----------------------------------------------------------------------------------------
+Post build actions
+
+pipeline {
+    agent any
+    stages {
+        stage('test'){
+            steps{
+                echo 'hello world'
+                sh 'mkdir test'
+                sh 'mkdir test'
+            }
+        post {
+            always {
+                echo 'job execuited'
+            }
+            success{
+                echo 'job success send success email notification'
+            }
+            failure {
+                echo 'job failure send failure email notification'
+            }
+        }
+        }
+    }
+}
+-----------------------------------------------------------------------------------------
+
+CICD
+
+
+curl -u siddeshgowda@hiqode.in:Hiqode@123 -T webapp/target/webapp.war "https://hiqodeinnovations.jfrog.io/artifactory/app_a/webapp-${BUILD_NUMBER}.war"
+
+
+
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/hello_world_public_war.git'
+            }
+        }
+        stage('code scan'){
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=project_b -Dsonar.projectName='project_b'"
+                }
+            }
+        }
+        stage('create binaries'){
+            steps{
+                sh 'mvn clean install'
+            }
+        }
+        stage('upload war to jfrog'){
+            steps{
+                sh """
+                    curl -u siddeshgowda@hiqode.in:Hiqode@123 -T webapp/target/webapp.war "https://hiqodeinnovations.jfrog.io/artifactory/app_a/webapp-${BUILD_NUMBER}.war"
+                """
+            }
+        }
+    }
+}
+
+
+__________________________________________________________________________________________________________________________
+
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/hello_world_public_war.git'
+            }
+        }
+        stage('code scan'){
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=project_b -Dsonar.projectName='project_b'"
+                }
+            }
+        }
+        stage('create binaries'){
+            steps{
+                sh 'mvn clean install'
+            }
+        }
+        // stage('upload war to jfrog'){
+        //     steps{
+        //         sh """
+        //             curl -u siddeshgowda@hiqode.in:Hiqode@123 -T webapp/target/webapp.war "https://hiqodeinnovations.jfrog.io/artifactory/app_a/webapp-${BUILD_NUMBER}.war"
+        //         """
+        //     }
+        // }
+        stage('upload war to jfrog') {
+            steps{
+                rtUpload (
+                    serverId: "hiqode_jforg",                     
+                    spec: """{                             
+                        "files": [                                     
+                                {                                         
+                                  "pattern": "webapp/target/webapp.war",                                         
+                                  "target": "app_a/webapp-${BUILD_NUMBER}.war"
+                                }                                 
+                            ]                             
+                    }"""                 
+                )  
+            }
+        }
+        stage('deploy to tomcat'){
+            steps{
+                script{
+                    sshagent(['jenkins_agents']) {
+                        sh 'scp -o StrictHostKeyChecking=no webapp/target/webapp.war ubuntu@18.191.134.86:/opt/tomcat/webapps'
+                    }
+                }
+            }
+        }
+    }
+}
+
+_____________________________________________________________________________________________________
+
+CI- docker image
+
+
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+        // dockerTool 'docker_1.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/hello_world_public_war.git'
+            }
+        }
+        stage('code scan'){
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=project_b -Dsonar.projectName='project_b'"
+                }
+            }
+        }
+        stage('create binaries'){
+            steps{
+                sh 'mvn clean install'
+            }
+        }
+        stage('create docker image'){
+            steps{
+                sh "docker build -t sample_war_app:v1.0.${BUILD_NUMBER} ."
+            }
+        }
+        stage('push docker image to Jfrog'){
+            steps{
+                sh "docker tag sample_war_app:v1.0.${BUILD_NUMBER} hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                withCredentials([usernamePassword(credentialsId: 'jforg_login_docker', passwordVariable: 'pass', usernameVariable: 'user')]) {
+                    sh "docker login -u ${user} -p ${pass} hiqodeinnovations.jfrog.io"
+                    sh "docker push hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                    sh "docker rmi -f hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                    sh "docker rmi -f sample_war_app:v1.0.${BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+}
+-------------------------------------------------------------------------------------------------
+
+Doploy war to tomcat with ansible playbook
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/hello_world_public_war.git'
+            }
+        }
+        stage('code scan'){
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=project_b -Dsonar.projectName='project_b'"
+                }
+            }
+        }
+        stage('create binaries'){
+            steps{
+                sh 'mvn clean install'
+            }
+        }
+        stage('upload war to jfrog') {
+            steps{
+                rtUpload (
+                    serverId: "hiqode_jforg",                     
+                    spec: """{                             
+                        "files": [                                     
+                                {                                         
+                                  "pattern": "webapp/target/webapp.war",                                         
+                                  "target": "app_a/webapp-${BUILD_NUMBER}.war"
+                                }                                 
+                            ]                             
+                    }"""                 
+                )  
+            }
+        }
+        stage('deploy to tomcat'){
+            steps{
+                script{
+                    sh """
+                        chmod 400 terraform_ohio.pem
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        ansible-playbook deploy_tomcat.yml -i hosts.ini --private-key terraform_ohio.pem -u ubuntu -e "build_number=${BUILD_NUMBER}"
+                    """
+                }
+            }
+        }
+    }
+}
+
+-------------------------------------------------------------------------------------------------
+Deploy docker image to docker host with ansible playbook
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+        // dockerTool 'docker_1.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/hello_world_public_war.git'
+            }
+        }
+        stage('code scan'){
+            steps {
+                withSonarQubeEnv('sonar_server') {
+                    sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=project_b -Dsonar.projectName='project_b'"
+                }
+            }
+        }
+        stage('create binaries'){
+            steps{
+                sh 'mvn clean install'
+            }
+        }
+        stage('create docker image'){
+            steps{
+                sh "docker build -t sample_war_app:v1.0.${BUILD_NUMBER} ."
+            }
+        }
+        stage('push docker image to Jfrog'){
+            steps{
+                sh "docker tag sample_war_app:v1.0.${BUILD_NUMBER} hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                withCredentials([usernamePassword(credentialsId: 'jforg_login_docker', passwordVariable: 'pass', usernameVariable: 'user')]) {
+                    sh "docker login -u ${user} -p ${pass} hiqodeinnovations.jfrog.io"
+                    sh "docker push hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                    sh "docker rmi -f hiqodeinnovations.jfrog.io/dockerimageappa/app_a:v1.0.${BUILD_NUMBER}"
+                    sh "docker rmi -f sample_war_app:v1.0.${BUILD_NUMBER}"
+                }
+            }
+        }
+        stage('deploy the docker container'){
+            steps{
+                script{
+                    sh """
+                        chmod 400 terraform_ohio.pem
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        ansible-playbook deploywithDocker.yml -i hosts.ini --private-key terraform_ohio.pem -u ubuntu -e "build_number=${BUILD_NUMBER}"
+                    """
+                }
+            }
+        }
+    }
+}
+
+-------------------------------------------------------------------------------------------------
+CICD-app demo
+pipeline {
+    agent any
+    tools{
+        maven 'maven_3.10.0'
+    }
+    stages{
+        stage('checkout'){
+            steps{
+                git branch: 'main', credentialsId: 'git_creds_siddesh', url: 'https://github.com/Siddeshg672/cicd-microservices.git'
+            }
+        }
+        stage('Sonar Scan') {
+            steps {
+                script {
+                    def scannerHome = tool 'sonar_server';
+                    withSonarQubeEnv('sonar_server') {
+                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${ms} -Dsonar.projectName=${ms} -Dsonar.sources=."
+                    }
+                }
+            }
+        }
+        stage('create docker image'){
+            steps{
+                dir("services/${ms}") {
+                    sh "docker build -t hiqodeinnovations.jfrog.io/dockerimageappa/cicd-app/${ms}:v.1.0.${BUILD_NUMBER} ."
+                }
+            }
+        }
+        stage('push docker image to Jfrog'){
+            steps{
+                withCredentials([usernamePassword(credentialsId: 'jforg_login_docker', passwordVariable: 'pass', usernameVariable: 'user')]) {
+                    sh "docker login -u ${user} -p ${pass} hiqodeinnovations.jfrog.io"
+                    sh "docker push hiqodeinnovations.jfrog.io/dockerimageappa/cicd-app/${ms}:v.1.0.${BUILD_NUMBER}"
+                    sh "docker rmi -f hiqodeinnovations.jfrog.io/dockerimageappa/cicd-app/${ms}:v.1.0.${BUILD_NUMBER}"
+                }
+            }
+        }
+        stage('deploy the docker container'){
+            steps{
+                script{
+                    sh """
+                        chmod 400 terraform_ohio.pem
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        ansible-playbook ansible-deploy.yml -i hosts.ini --private-key terraform_ohio.pem -u ubuntu -e "BUILD_NUMBER=${BUILD_NUMBER}" -e "microservice=${ms}" -e "port_host=${port_host}" -e "port_cont=${port_cont}"
+                    """
+                }
+            }
+        }
+    }
+}
+-------------------------------------------------------------------------------------------------
+Deploy docker image to k8s
+devsecops
+Generic web hook
+Shared liraries
